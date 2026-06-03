@@ -1,0 +1,9 @@
+kolom,deskripsi
+nama_makanan,Nama bahan pangan
+kategori,Kategori makanan
+kalori,Jumlah kalori per 100g
+protein,Jumlah protein per 100g
+lemak,Jumlah lemak per 100g
+karbo,Jumlah karbohidrat per 100g
+harga,Harga makanan per kilogram
+skor_kesehatan,Skor kesehatan hasil feature engineering

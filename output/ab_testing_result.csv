@@ -1,0 +1,3 @@
+group,kriteria,jumlah_data,rata_rata_skor_kesehatan,t_statistic,p_value,kesimpulan
+Group A - Murah,harga <= median harga,500,40.38,1.3231,0.1862,tidak terdapat perbedaan rata-rata skor_kesehatan yang signifikan antara makanan murah dan mahal
+Group B - Mahal,harga > median harga,500,38.18,1.3231,0.1862,tidak terdapat perbedaan rata-rata skor_kesehatan yang signifikan antara makanan murah dan mahal
