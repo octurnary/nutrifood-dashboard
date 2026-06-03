@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
@@ -20,6 +22,28 @@ PALETTE = {
     'line': '#E6DED8',
     'muted': '#6B7280',
     'soft': '#F3F4F6',
+}
+
+BASE_DIR = Path(__file__).resolve().parent
+NUMERIC_COLUMNS = ['kalori', 'protein', 'karbo', 'lemak', 'harga']
+
+CATEGORY_RULES = {
+    'Karbohidrat': ['beras', 'nasi', 'kentang', 'roti', 'mie', 'jagung'],
+    'Protein': ['ikan', 'ayam', 'daging', 'tahu', 'tempe', 'telur', 'susu', 'udang'],
+    'Sayur': [
+        'brokoli',
+        'wortel',
+        'bayam',
+        'kangkung',
+        'sawi',
+        'mentimun',
+        'kol',
+        'selada',
+        'tomat',
+        'cabai',
+    ],
+    'Buah': ['pepaya', 'melon', 'apel', 'pisang', 'jeruk', 'mangga', 'semangka'],
+    'Minuman': ['teh', 'kopi', 'jus'],
 }
 
 BUSINESS_QUESTIONS = [
@@ -297,9 +321,111 @@ def apply_theme():
     )
 
 
+def kategori_makanan(nama):
+    nama = str(nama).lower()
+
+    for kategori, keywords in CATEGORY_RULES.items():
+        if any(keyword in nama for keyword in keywords):
+            return kategori
+
+    return 'Lainnya'
+
+
+def prepare_final_data(data):
+    data = data.copy()
+    data = data.rename(columns={
+        'Bahan Pangan': 'nama_makanan',
+        'Kalori (kkal/100g)': 'kalori',
+        'Protein (g/100g)': 'protein',
+        'Karbohidrat (g/100g)': 'karbo',
+        'Lemak (g/100g)': 'lemak',
+        'Harga (Rp/kg)': 'harga',
+    })
+
+    if 'harga_rp;' in data.columns:
+        if 'harga' not in data.columns:
+            data['harga'] = data['harga_rp;']
+        else:
+            data['harga'] = data['harga'].where(data['harga'].notna(), data['harga_rp;'])
+
+    required_columns = ['nama_makanan', *NUMERIC_COLUMNS]
+    missing_columns = [column for column in required_columns if column not in data.columns]
+
+    if missing_columns:
+        raise ValueError(f'Kolom dataset belum lengkap: {", ".join(missing_columns)}')
+
+    data['nama_makanan'] = data['nama_makanan'].astype(str).str.strip()
+
+    if not pd.api.types.is_numeric_dtype(data['harga']):
+        harga_text = data['harga'].astype(str).str.strip()
+        harga_rupiah = (
+            harga_text.str.contains('Rp|;', case=False, regex=True)
+            | harga_text.str.contains(r'^\d{1,3}(?:\.\d{3})+$', regex=True)
+        )
+        harga_clean = (
+            harga_text
+            .str.replace('Rp', '', regex=False)
+            .str.replace(';', '', regex=False)
+            .str.strip()
+        )
+        harga_clean = harga_clean.where(
+            ~harga_rupiah,
+            harga_clean.str.replace('.', '', regex=False),
+        )
+        harga_clean = harga_clean.str.replace(',', '.', regex=False)
+        data['harga'] = harga_clean
+
+    for column in NUMERIC_COLUMNS:
+        data[column] = pd.to_numeric(data[column], errors='coerce')
+        median_value = data[column].median()
+
+        if pd.isna(median_value):
+            median_value = 0
+
+        data[column] = data[column].fillna(median_value)
+
+    if 'kategori' not in data.columns:
+        data['kategori'] = data['nama_makanan'].apply(kategori_makanan)
+
+    data['skor_kesehatan'] = (
+        (data['protein'] * 2)
+        + data['karbo']
+        - data['lemak']
+    )
+
+    return data[[
+        'nama_makanan',
+        'kategori',
+        'kalori',
+        'protein',
+        'lemak',
+        'karbo',
+        'harga',
+        'skor_kesehatan',
+    ]]
+
+
 @st.cache_data
 def load_data():
-    return pd.read_csv('data_final.csv')
+    final_path = BASE_DIR / 'data_final.csv'
+    excel_path = BASE_DIR / 'data' / 'data_set_bahan_pangan_1000.xlsx'
+    fallback_csv_path = BASE_DIR / 'data' / 'data_final_identik.csv'
+
+    if final_path.exists():
+        return prepare_final_data(pd.read_csv(final_path))
+
+    if excel_path.exists():
+        return prepare_final_data(pd.read_excel(excel_path))
+
+    if fallback_csv_path.exists():
+        return prepare_final_data(
+            pd.read_csv(fallback_csv_path, engine='python', on_bad_lines='skip')
+        )
+
+    raise FileNotFoundError(
+        'File data tidak ditemukan. Pastikan data_final.csv atau file dataset '
+        'di folder data sudah ikut terunggah ke repository.'
+    )
 
 
 def add_health_score(data):
@@ -746,7 +872,7 @@ anchor('dictionary')
 st.header('Data Dictionary dan Data Model-Ready')
 
 try:
-    data_dictionary_df = pd.read_csv('data_dictionary.csv')
+    data_dictionary_df = pd.read_csv(BASE_DIR / 'data_dictionary.csv')
 except FileNotFoundError:
     data_dictionary_df = pd.DataFrame(
         DATA_DICTIONARY.items(),
